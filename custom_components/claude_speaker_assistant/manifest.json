@@ -1,0 +1,12 @@
+{
+  "domain": "claude_speaker_assistant",
+  "name": "Claude Speaker Assistant",
+  "codeowners": ["@eragon02424"],
+  "config_flow": true,
+  "documentation": "https://github.com/eragon02424/ClaudeSpeakerAssistant",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/eragon02424/ClaudeSpeakerAssistant/issues",
+  "requirements": ["asyncssh>=2.14.0"],
+  "version": "0.1.0"
+}

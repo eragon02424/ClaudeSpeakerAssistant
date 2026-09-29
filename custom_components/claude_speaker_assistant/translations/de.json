@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Claude Speaker Assistant einrichten",
+        "description": "Zugangsdaten zur Maschine, auf der Claude Code laeuft.",
+        "data": {
+          "ssh_host": "SSH-Host (IP oder Hostname)",
+          "ssh_port": "SSH-Port",
+          "ssh_username": "SSH-Benutzername",
+          "ssh_key_path": "Pfad zum privaten SSH-Schluessel (auf dem Home-Assistant-Host)",
+          "claude_binary": "Claude-Code-Befehl/Pfad",
+          "mcp_config_path": "Pfad zu einer reduzierten --mcp-config-Datei (optional)",
+          "idle_timeout": "Idle-Timeout in Sekunden, bevor eine neue Sitzung aufgebaut wird"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Diese Maschine ist bereits konfiguriert."
+    }
+  }
+}
