@@ -7,7 +7,6 @@ CONF_SSH_PORT = "ssh_port"
 CONF_SSH_USERNAME = "ssh_username"
 CONF_SSH_KEY_PATH = "ssh_key_path"
 CONF_CLAUDE_BINARY = "claude_binary"
-CONF_MCP_CONFIG_PATH = "mcp_config_path"
 CONF_IDLE_TIMEOUT = "idle_timeout"
 CONF_ABORT_PHRASES = "abort_phrases"
 

@@ -10,7 +10,6 @@
           "ssh_username": "SSH username",
           "ssh_key_path": "Path to the private SSH key (on the Home Assistant host)",
           "claude_binary": "Claude Code command/path",
-          "mcp_config_path": "Path to a reduced --mcp-config file (optional)",
           "idle_timeout": "Idle timeout in seconds before a new session is started"
         }
       }

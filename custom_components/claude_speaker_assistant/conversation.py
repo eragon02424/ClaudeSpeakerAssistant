@@ -1,6 +1,6 @@
 """Conversation-Plattform fuer Claude Speaker Assistant.
 
-Architektur (siehe Second-Brain-Projekt "claude-smart-home-zentrale", Entscheidungen vom 2026-09-28/29):
+Architektur (siehe Second-Brain-Projekt "claude-smart-home-zentrale", Entscheidungen vom 2026-09-28/29/30):
 - Claude Code oeffnet selbst keinen Netzwerk-Port; die SSH-Verbindung uebernimmt den Transport.
 - Ein einzelner Claude-Code-Prozess laeuft im Streaming-JSON-Modus und bleibt zwischen
   mehreren Sprachanfragen offen (kein Neustart pro Anfrage).
@@ -8,11 +8,11 @@ Architektur (siehe Second-Brain-Projekt "claude-smart-home-zentrale", Entscheidu
   neu aufgebaut.
 - Abbruch laeuft ueber das dokumentierte control_request/interrupt-Kommando des
   Streaming-JSON-Protokolls (kein Agent SDK noetig), mit hartem Kill als Sicherheitsnetz.
+- Bewusst immer der volle MCP-Serverausbau (keine --mcp-config-Reduktion): im echten Test
+  lag die Antwortzeit trotzdem unter 2 Sekunden, eine Reduktion bringt keinen Mehrwert.
 
-WICHTIG: Noch ungetestet. Insbesondere das genaue JSON-Format der ausgehenden
-"user"-Nachricht ist auf Basis der offiziellen Protokoll-Uebersicht nachgebaut,
-aber nicht 1:1 gegen eine echte Claude-Code-Instanz verifiziert - siehe Testplan
-im Second-Brain-Projekt (Punkt 1+2: Neustart pro Anfrage vs. durchlaufende Sitzung).
+Getestet und funktionsfaehig seit 2026-09-30 (echte Anfrage ueber die Assist-Pipeline
+lieferte eine korrekte Antwort in ca. 1.7s).
 """
 from __future__ import annotations
 
@@ -30,12 +30,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import intent as ha_intent
 
 from .const import (
     CONF_ABORT_PHRASES,
     CONF_CLAUDE_BINARY,
     CONF_IDLE_TIMEOUT,
-    CONF_MCP_CONFIG_PATH,
     CONF_SSH_HOST,
     CONF_SSH_KEY_PATH,
     CONF_SSH_PORT,
@@ -64,8 +64,12 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
     """Leitet Sprachanfragen per SSH an eine entfernte Claude-Code-Instanz weiter."""
 
     _attr_has_entity_name = True
-    _attr_name = "Claude Speaker Assistant"
-    _attr_supported_languages = MATCH_ALL
+    _attr_name = None
+
+    @property
+    def supported_languages(self):
+        """Return a list of supported languages."""
+        return MATCH_ALL
 
     def __init__(self, entry: ConfigEntry, data: dict[str, Any]) -> None:
         self._entry = entry
@@ -116,7 +120,7 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
 
             self._last_activity = time.monotonic()
 
-        response = conversation.intent.IntentResponse(language=user_input.language)
+        response = ha_intent.IntentResponse(language=user_input.language)
         response.async_set_speech(reply_text)
         return conversation.ConversationResult(
             response=response, conversation_id=user_input.conversation_id
@@ -144,11 +148,7 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
         )
 
         command = [self._data.get(CONF_CLAUDE_BINARY, DEFAULT_CLAUDE_BINARY)]
-        command += ["--input-format", "stream-json", "--output-format", "stream-json"]
-        mcp_config_path = self._data.get(CONF_MCP_CONFIG_PATH)
-        if mcp_config_path:
-            command += ["--mcp-config", mcp_config_path]
-
+        command += ["-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json"]
         self._process = await self._ssh_conn.create_process(" ".join(command))
 
     async def _teardown(self) -> None:
@@ -171,7 +171,7 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
 
         collected_text: list[str] = []
         while True:
-            line = await asyncio.wait_for(self._process.stdout.readline(), timeout=30)
+            line = await asyncio.wait_for(self._process.stdout.readline(), timeout=90)
             if not line:
                 raise OSError("Claude-Code-Prozess hat stdout geschlossen")
 

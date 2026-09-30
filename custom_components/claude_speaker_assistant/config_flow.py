@@ -12,7 +12,6 @@ from homeassistant.data_entry_flow import FlowResult
 from .const import (
     CONF_CLAUDE_BINARY,
     CONF_IDLE_TIMEOUT,
-    CONF_MCP_CONFIG_PATH,
     CONF_SSH_HOST,
     CONF_SSH_KEY_PATH,
     CONF_SSH_PORT,
@@ -32,7 +31,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_SSH_USERNAME): str,
         vol.Required(CONF_SSH_KEY_PATH): str,
         vol.Optional(CONF_CLAUDE_BINARY, default=DEFAULT_CLAUDE_BINARY): str,
-        vol.Optional(CONF_MCP_CONFIG_PATH, default=""): str,
         vol.Optional(CONF_IDLE_TIMEOUT, default=DEFAULT_IDLE_TIMEOUT): int,
     }
 )
