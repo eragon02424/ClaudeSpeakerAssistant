@@ -17,6 +17,11 @@ Architektur (siehe Second-Brain-Projekt "claude-smart-home-zentrale", Entscheidu
   auf alle MCP-Server zugreifen koennen, ohne dass einer gesperrt ist.
 - --model claude-haiku-4-5-20251001 ist testweise gesetzt (Entscheidung vom 2026-10-02):
   kleineres/schnelleres Modell zum Ausprobieren anstelle des Standardmodells.
+- _handle_abort pausiert seit 2026-10-02 zusaetzlich ALLE Medienwiedergaben (entity_id: all),
+  nicht nur die ReSpeaker-eigene. Bewusst NICHT als lokaler HA-Intent gebaut: ein lokaler
+  Intent fuer "Abbruch"/"stopp" wuerde wegen prefer_local_intents Vorrang vor diesem
+  Conversation-Agent bekommen und so den Interrupt einer laufenden Claude-Code-Anfrage
+  verhindern. Beides soll gleichzeitig passieren, deshalb liegt es hier im selben Codepfad.
 
 Getestet und funktionsfaehig seit 2026-09-30 (echte Anfrage ueber die Assist-Pipeline
 lieferte eine korrekte Antwort in ca. 1.7s).
@@ -201,10 +206,24 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
 
         return "".join(collected_text) or "Ich habe dazu keine Antwort bekommen."
 
+    async def _pause_all_media(self) -> None:
+        """Pausiert alle Medienwiedergaben im Haus (entity_id: all), Fehler werden nur geloggt."""
+        try:
+            await self.hass.services.async_call(
+                "media_player",
+                "media_pause",
+                {"entity_id": "all"},
+                blocking=False,
+            )
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.warning("Konnte Medienwiedergaben beim Abbruch nicht pausieren (%s).", err)
+
     async def _handle_abort(self) -> str:
-        """Schickt ein Interrupt-Kommando, killt den Prozess notfalls hart."""
+        """Pausiert alle Medienwiedergaben, schickt ein Interrupt-Kommando, killt notfalls hart."""
+        await self._pause_all_media()
+
         if self._process is None:
-            return "Es laeuft gerade nichts, das ich abbrechen koennte."
+            return "Medienwiedergabe pausiert. Es lief sonst nichts, das ich abbrechen koennte."
 
         request_id = str(uuid.uuid4())
         control_message = {
@@ -217,14 +236,17 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
             await asyncio.wait_for(
                 self._wait_for_control_response(request_id), INTERRUPT_GRACE_PERIOD
             )
-            return "Abgebrochen."
+            return "Abgebrochen und Medienwiedergabe pausiert."
         except (asyncio.TimeoutError, asyncssh.Error, OSError):
             _LOGGER.info(
                 "Interrupt hat innerhalb von %.1fs nicht reagiert, Prozess wird hart beendet.",
                 INTERRUPT_GRACE_PERIOD,
             )
             await self._teardown()
-            return "Abgebrochen (Sitzung wird beim naechsten Mal neu aufgebaut)."
+            return (
+                "Abgebrochen und Medienwiedergabe pausiert "
+                "(Sitzung wird beim naechsten Mal neu aufgebaut)."
+            )
 
     async def _wait_for_control_response(self, request_id: str) -> None:
         """Wartet auf die control_response zum gegebenen request_id."""
