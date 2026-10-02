@@ -10,6 +10,11 @@ Architektur (siehe Second-Brain-Projekt "claude-smart-home-zentrale", Entscheidu
   Streaming-JSON-Protokolls (kein Agent SDK noetig), mit hartem Kill als Sicherheitsnetz.
 - Bewusst immer der volle MCP-Serverausbau (keine --mcp-config-Reduktion): im echten Test
   lag die Antwortzeit trotzdem unter 2 Sekunden, eine Reduktion bringt keinen Mehrwert.
+- --permission-mode bypassPermissions ist bewusst gesetzt (Entscheidung vom 2026-10-02):
+  Im headless Streaming-JSON-Modus (-p, kein TTY) kann Claude Code keine interaktive
+  Rueckfrage stellen, auch nicht beim ersten Start eines MCP-Servers. Ohne diesen Flag
+  wuerde der MCP-Zugriff schlicht verweigert. Der Sprachassistent soll uneingeschraenkt
+  auf alle MCP-Server zugreifen koennen, ohne dass einer gesperrt ist.
 
 Getestet und funktionsfaehig seit 2026-09-30 (echte Anfrage ueber die Assist-Pipeline
 lieferte eine korrekte Antwort in ca. 1.7s).
@@ -148,7 +153,13 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
         )
 
         command = [self._data.get(CONF_CLAUDE_BINARY, DEFAULT_CLAUDE_BINARY)]
-        command += ["-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json"]
+        command += [
+            "-p",
+            "--verbose",
+            "--input-format", "stream-json",
+            "--output-format", "stream-json",
+            "--permission-mode", "bypassPermissions",
+        ]
         self._process = await self._ssh_conn.create_process(" ".join(command))
 
     async def _teardown(self) -> None:
