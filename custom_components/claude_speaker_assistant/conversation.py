@@ -15,6 +15,8 @@ Architektur (siehe Second-Brain-Projekt "claude-smart-home-zentrale", Entscheidu
   Rueckfrage stellen, auch nicht beim ersten Start eines MCP-Servers. Ohne diesen Flag
   wuerde der MCP-Zugriff schlicht verweigert. Der Sprachassistent soll uneingeschraenkt
   auf alle MCP-Server zugreifen koennen, ohne dass einer gesperrt ist.
+- --model claude-haiku-4-5-20251001 ist testweise gesetzt (Entscheidung vom 2026-10-02):
+  kleineres/schnelleres Modell zum Ausprobieren anstelle des Standardmodells.
 
 Getestet und funktionsfaehig seit 2026-09-30 (echte Anfrage ueber die Assist-Pipeline
 lieferte eine korrekte Antwort in ca. 1.7s).
@@ -159,6 +161,7 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
             "--input-format", "stream-json",
             "--output-format", "stream-json",
             "--permission-mode", "bypassPermissions",
+            "--model", "claude-haiku-4-5-20251001",
         ]
         self._process = await self._ssh_conn.create_process(" ".join(command))
 
