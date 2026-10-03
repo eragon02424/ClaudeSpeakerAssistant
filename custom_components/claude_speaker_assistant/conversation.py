@@ -6,13 +6,14 @@ Architektur (siehe Second-Brain-Projekt "claude-smart-home-zentrale", Entscheidu
   mehreren Sprachanfragen offen (kein Neustart pro Anfrage).
 - Nach CONF_IDLE_TIMEOUT Sekunden ohne echte Anfrage wird die Sitzung PROAKTIV im
   Hintergrund neu aufgebaut (seit 2026-10-03, siehe _schedule_idle_rebuild /
-  _handle_idle_rebuild) - nicht erst traege bei der naechsten Anfrage. Grund: Die
-  naechste echte Sprachanfrage soll eine bereits warme Sitzung vorfinden, nicht selbst
-  auf den SSH-Verbindungsaufbau + Claude-Code-Start warten muessen. Ein Timer wird bei
-  jeder echten Aktivitaet (Query oder Abbruch) neu gestellt; beim Ablauf wird die
-  verstrichene Zeit nochmal gegengeprueft (Race-Schutz), dann Teardown + Neuaufbau unter
-  Lock, danach wird der naechste Timer gestellt. async_added_to_hass baut beim Start von
-  Home Assistant direkt eine erste warme Sitzung auf, statt auf die erste Anfrage zu warten.
+  _handle_idle_rebuild) - nicht erst traege bei der naechsten Anfrage. WICHTIG
+  (Praezisierung vom 2026-10-03): Der Timer laeuft NICHT endlos alle CONF_IDLE_TIMEOUT
+  Sekunden weiter, wenn keine echten Nachrichten mehr kommen. Er wird nur durch eine
+  echte Sprachanfrage (async_process) gestartet bzw. neu gestartet. Feuert er einmal
+  proaktiv (_handle_idle_rebuild), baut er die Sitzung neu auf und stoppt danach, bis
+  wieder eine echte Nachricht reinkommt. async_added_to_hass baut beim HA-Start direkt
+  eine erste warme Sitzung auf, startet den Timer dabei aber bewusst NICHT - der Timer
+  beginnt erst mit der ersten echten Nachricht.
 - Abbruch laeuft ueber das dokumentierte control_request/interrupt-Kommando des
   Streaming-JSON-Protokolls (kein Agent SDK noetig), mit hartem Kill als Sicherheitsnetz.
 - Bewusst immer der volle MCP-Serverausbau (keine --mcp-config-Reduktion): im echten Test
@@ -117,15 +118,18 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
         }
 
     async def async_added_to_hass(self) -> None:
-        """Baut beim Start von Home Assistant direkt eine warme Sitzung auf."""
+        """Baut beim Start von Home Assistant direkt eine warme Sitzung auf.
+
+        Startet bewusst NICHT den Idle-Rebuild-Timer - der beginnt erst mit der
+        ersten echten Sprachnachricht (siehe async_process), damit ohne jegliche
+        Nutzung nicht alle CONF_IDLE_TIMEOUT Sekunden unnoetig neu verbunden wird.
+        """
         await super().async_added_to_hass()
         try:
             async with self._lock:
                 await self._ensure_session()
-                self._last_activity = time.monotonic()
         except (asyncssh.Error, OSError) as err:
             _LOGGER.warning("Warmstart der Claude-Code-Sitzung fehlgeschlagen (%s).", err)
-        self._schedule_idle_rebuild()
 
     async def async_will_remove_from_hass(self) -> None:
         """Raeumt Timer und Sitzung auf, wenn die Entity entfernt wird."""
@@ -135,7 +139,11 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
         await self._teardown()
 
     def _schedule_idle_rebuild(self) -> None:
-        """Plant einen proaktiven Sitzungsneuaufbau CONF_IDLE_TIMEOUT Sekunden ab jetzt."""
+        """Plant einen proaktiven Sitzungsneuaufbau CONF_IDLE_TIMEOUT Sekunden ab jetzt.
+
+        Wird NUR von einer echten Sprachnachricht (async_process) aufgerufen, nie
+        automatisch verkettet - siehe _handle_idle_rebuild.
+        """
         if self._idle_rebuild_unsub is not None:
             self._idle_rebuild_unsub()
         idle_timeout = self._data.get(CONF_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT)
@@ -144,13 +152,20 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
         )
 
     async def _handle_idle_rebuild(self, _now) -> None:
-        """Baut nach Ablauf der Idle-Zeit proaktiv eine frische Sitzung auf."""
+        """Baut nach Ablauf der Idle-Zeit einmalig proaktiv eine frische Sitzung auf.
+
+        Stellt sich NICHT selbst erneut - ohne eine weitere echte Nachricht bleibt
+        der Timer danach aus, es wird also nicht endlos alle CONF_IDLE_TIMEOUT
+        Sekunden neu verbunden.
+        """
         self._idle_rebuild_unsub = None
         idle_timeout = self._data.get(CONF_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT)
 
         async with self._lock:
             # Race-Schutz: zwischen Timer-Ablauf und Lock-Erhalt koennte eine echte
-            # Anfrage reingekommen sein, die _last_activity schon aktualisiert hat.
+            # Anfrage reingekommen sein, die _last_activity schon aktualisiert und
+            # dabei bereits ihren eigenen Timer gestellt hat - dann hier nachziehen
+            # statt den frischeren Timer dieser Anfrage zu verwerfen.
             if (time.monotonic() - self._last_activity) < idle_timeout:
                 self._schedule_idle_rebuild()
                 return
@@ -162,15 +177,10 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
             try:
                 await self._teardown()
                 await self._ensure_session()
-                self._last_activity = time.monotonic()
             except (asyncssh.Error, OSError) as err:
                 _LOGGER.warning(
-                    "Proaktiver Sitzungsneuaufbau fehlgeschlagen (%s), "
-                    "naechster Versuch beim naechsten Timer-Ablauf.",
-                    err,
+                    "Proaktiver Sitzungsneuaufbau fehlgeschlagen (%s).", err
                 )
-
-        self._schedule_idle_rebuild()
 
     async def async_process(
         self, user_input: conversation.ConversationInput
@@ -198,6 +208,7 @@ class ClaudeSpeakerConversationEntity(conversation.ConversationEntity):
 
             self._last_activity = time.monotonic()
 
+        # Timer startet bzw. startet neu - nur hier, bei einer echten Nachricht.
         self._schedule_idle_rebuild()
 
         response = ha_intent.IntentResponse(language=user_input.language)
