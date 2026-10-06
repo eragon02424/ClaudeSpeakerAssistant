@@ -10,7 +10,8 @@ Diese Integration registriert einen Home-Assistant-Conversation-Agent, der Sprac
 
 - Ein Claude-Code-Prozess läuft dauerhaft im Streaming-JSON-Modus (`--input-format stream-json --output-format stream-json`) auf der Zielmaschine.
 - Diese Integration hält eine SSH-Verbindung zu dieser Maschine offen und schickt/liest JSON-Lines über diesen Kanal.
-- Nach 10 Minuten ohne Sprachanfrage wird die Sitzung einmalig proaktiv neu aufgebaut (kein Gesprächskontext über die Pause hinweg nötig).
+- Nach 10 Minuten ohne Sprachanfrage wird im Hintergrund eine Ersatz-Sitzung aufgebaut; die alte Sitzung beantwortet bis zur Bereitschaft der neuen weiter Anfragen, erst dann wird umgeschaltet. Kommt währenddessen eine neue Anfrage, wird die Ersatz-Sitzung verworfen und das Gespräch in der alten Sitzung fortgeführt (der Kontext geht mitten im Gespräch nie verloren).
+- Geht die Verbindung verloren (Anfrage oder Heartbeat schlägt fehl, Prozess oder SSH-Verbindung enden), wird sofort im Hintergrund eine neue Sitzung aufgebaut, bei nicht erreichbarer Maschine mit wachsendem Abstand wiederholt. Ein 5-Minuten-Heartbeat und SSH-Keepalives erkennen auch stille Abbrüche.
 - Abbruch einer laufenden Antwort läuft über das offiziell dokumentierte `control_request`/`interrupt`-Kommando des Streaming-JSON-Protokolls (kein Agent SDK nötig), mit hartem Prozess-Kill als Sicherheitsnetz.
 - Kein separates Wrapper-Skript auf der Zielmaschine nötig – nur ein laufender SSH-Server und installiertes Claude Code dort.
 
